@@ -50,6 +50,17 @@ dist/
 
 Same syntax as `.gitignore`. You can keep a single `.graphifyignore` at your repo root — patterns work correctly even when graphify is run on a subfolder.
 
+If your real source lives under a hidden directory such as `.pi/`, add a `.graphifyinclude`
+file with explicit repo-relative paths to opt those roots back in:
+
+```
+# .graphifyinclude
+.pi/extensions/graphify-meta-harness/
+```
+
+Use `.graphifyinclude` for specific hidden files/directories you want scanned. Hidden paths
+stay excluded by default unless you opt them in explicitly.
+
 ## How it works
 
 graphify runs in three passes. First, a deterministic AST pass extracts structure from code files (classes, functions, imports, call graphs, docstrings, rationale comments) with no LLM needed. Second, video and audio files are transcribed locally with faster-whisper using a domain-aware prompt derived from corpus god nodes — transcripts are cached so re-runs are instant. Third, Claude subagents run in parallel over docs, papers, images, and transcripts to extract concepts, relationships, and design rationale. The results are merged into a NetworkX graph, clustered with Leiden community detection, and exported as interactive HTML, queryable JSON, and a plain-language audit report.

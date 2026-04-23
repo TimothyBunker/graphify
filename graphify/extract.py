@@ -3253,21 +3253,45 @@ def collect_files(target: Path, *, follow_symlinks: bool = False, root: Path | N
         ".lua", ".toc", ".zig", ".ps1",
         ".m", ".mm",
     }
-    from graphify.detect import _load_graphifyignore, _is_ignored
+    from graphify.detect import _load_graphifyignore, _is_ignored, _load_graphifyinclude, _resolve_graphifyinclude_paths
     ignore_root = root if root is not None else target
     patterns = _load_graphifyignore(ignore_root)
+    include_patterns = _load_graphifyinclude(ignore_root)
+    explicit_include_paths = _resolve_graphifyinclude_paths(ignore_root, include_patterns)
 
     def _ignored(p: Path) -> bool:
         return bool(patterns and _is_ignored(p, ignore_root, patterns))
 
+    def _inside_explicit_include(p: Path) -> bool:
+        try:
+            resolved = p.resolve()
+        except Exception:
+            resolved = p
+        return any(resolved == include_path or resolved.is_relative_to(include_path) for include_path in explicit_include_paths)
+
     if not follow_symlinks:
         results: list[Path] = []
-        for ext in sorted(_EXTENSIONS):
-            results.extend(
-                p for p in target.rglob(f"*{ext}")
-                if not any(part.startswith(".") for part in p.parts)
-                and not _ignored(p)
-            )
+        seen: set[Path] = set()
+
+        def _collect_from(base: Path, allow_hidden: bool = False) -> None:
+            for ext in sorted(_EXTENSIONS):
+                for p in base.rglob(f"*{ext}"):
+                    if not allow_hidden and any(part.startswith(".") for part in p.parts) and not _inside_explicit_include(p):
+                        continue
+                    if _ignored(p) or p in seen:
+                        continue
+                    seen.add(p)
+                    results.append(p)
+
+        _collect_from(target)
+        for include_path in explicit_include_paths:
+            if include_path.is_file():
+                if include_path.suffix in _EXTENSIONS and not _ignored(include_path) and include_path not in seen:
+                    seen.add(include_path)
+                    results.append(include_path)
+                continue
+            if include_path.is_dir():
+                _collect_from(include_path, allow_hidden=True)
         return sorted(results)
     # Walk with symlink following + cycle detection
     results = []

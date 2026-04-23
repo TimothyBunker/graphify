@@ -292,6 +292,26 @@ def _load_graphifyignore(root: Path) -> list[tuple[Path, str]]:
     return patterns
 
 
+def _load_graphifyinclude(root: Path) -> list[tuple[Path, str]]:
+    """Read .graphifyinclude from root and ancestors up to the git boundary."""
+    patterns: list[tuple[Path, str]] = []
+    current = root.resolve()
+    while True:
+      include_file = current / ".graphifyinclude"
+      if include_file.exists():
+          for line in include_file.read_text(encoding="utf-8", errors="ignore").splitlines():
+              line = line.strip()
+              if line and not line.startswith("#"):
+                  patterns.append((current, line))
+      if (current / ".git").exists():
+          break
+      parent = current.parent
+      if parent == current:
+          break
+      current = parent
+    return patterns
+
+
 def _is_ignored(path: Path, root: Path, patterns: list[tuple[Path, str]]) -> bool:
     """Return True if path matches any .graphifyignore pattern."""
     if not patterns:
@@ -333,6 +353,30 @@ def _is_ignored(path: Path, root: Path, patterns: list[tuple[Path, str]]) -> boo
     return False
 
 
+def _resolve_graphifyinclude_paths(root: Path, patterns: list[tuple[Path, str]]) -> list[Path]:
+    """Resolve explicit include paths from .graphifyinclude.
+
+    This is intentionally path-oriented: it is meant for opting specific hidden
+    directories or files back into the graph, not for broad glob-based scanning.
+    """
+    resolved: list[Path] = []
+    seen: set[Path] = set()
+    for anchor, pattern in patterns:
+        candidate_pattern = pattern.strip().strip("/")
+        if not candidate_pattern or any(ch in candidate_pattern for ch in "*?[]"):
+            continue
+        candidate = (anchor / candidate_pattern).resolve()
+        if not candidate.exists() or candidate in seen:
+            continue
+        try:
+            candidate.relative_to(root.resolve())
+        except ValueError:
+            continue
+        seen.add(candidate)
+        resolved.append(candidate)
+    return resolved
+
+
 def detect(root: Path, *, follow_symlinks: bool = False) -> dict:
     root = root.resolve()
     files: dict[FileType, list[str]] = {
@@ -346,12 +390,26 @@ def detect(root: Path, *, follow_symlinks: bool = False) -> dict:
 
     skipped_sensitive: list[str] = []
     ignore_patterns = _load_graphifyignore(root)
+    include_patterns = _load_graphifyinclude(root)
 
     # Always include graphify-out/memory/ - query results filed back into the graph
     memory_dir = root / "graphify-out" / "memory"
     scan_paths = [root]
     if memory_dir.exists():
         scan_paths.append(memory_dir)
+    root_resolved = root.resolve()
+    for include_path in _resolve_graphifyinclude_paths(root, include_patterns):
+        if include_path == root:
+            continue
+        # Explicit include paths must still be scanned even when they live under
+        # the root tree, because the root walk prunes hidden directories in-place.
+        # Only suppress duplicates when the path is already listed directly, or
+        # when it is nested under another explicit scan root such as memory_dir.
+        if any(include_path == existing for existing in scan_paths):
+            continue
+        if any(existing != root_resolved and include_path.is_relative_to(existing) for existing in scan_paths):
+            continue
+        scan_paths.append(include_path)
 
     seen: set[Path] = set()
     all_files: list[Path] = []
