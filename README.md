@@ -1,3 +1,5 @@
+> This is Timothy Bunker's fork of [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify). The project and documentation below originate upstream; this fork is not a claim of original authorship.
+
 <p align="center">
   <a href="https://graphifylabs.ai"><img src="https://raw.githubusercontent.com/safishamsi/graphify/v4/docs/logo-text.svg" width="260" height="64" alt="Graphify"/></a>
 </p>
